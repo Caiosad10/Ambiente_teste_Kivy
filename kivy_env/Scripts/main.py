@@ -1,176 +1,118 @@
-import json
-from datetime import datetime, time, date
-
-import requests
-
-from kivy.lang import Builder
-
 from kivymd.app import MDApp
-from kivymd.uix.screen import MDScreen
+from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton
 from kivymd.uix.textfield import MDTextField
-from kivy.uix.boxlayout import BoxLayout
-from kivymd.uix.dialog import MDDialog
-from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.clock import Clock
-from kivymd.uix.pickers import MDDatePicker, MDTimePicker
+from kivymd.uix.button import MDRaisedButton
+from kivymd.uix.screen import MDScreen
+from kivymd.uix.pickers import MDDatePicker
+from kivy.uix.screenmanager import ScreenManager
+from kivymd.uix.menu import MDDropdownMenu
+from kivymd.uix.list import OneLineListItem
+from kivy.core.window import Window
 
-import locale # Importe o módulo locale para formatação de data
+class GerenciadorChamados:
+    def __init__(self):
+        self.chamados = []
 
-locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
+    def adicionar_chamado(self, usuario, motivo, descricao):
+        chamado = {
+            "id": len(self.chamados) + 1,
+            "usuario": usuario,
+            "motivo": motivo,
+            "descricao": descricao,
+            "status": "Aberto"
+        }
+        self.chamados.append(chamado)
+        print(f"Chamado {chamado['id']} adicionado com sucesso!")
 
-class MyTimePicker(MDTimePicker):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.bind(on_save=self.format_time)
+    def listar_chamados(self):
+        return self.chamados
 
-    def format_time(self, instance, value):
-        if value:
-            formatted_time = value.strftime('%H:%M')
-            self.time = formatted_time
-            print(f"Hora selecionada: {formatted_time}")
-
-class TelaInicial(MDScreen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical')
-        label = MDLabel(text="Agenda", halign="center")
-        botao_agendar = MDRaisedButton(text="Agendar Consulta", pos_hint={"center_x": 0.5})
-        botao_agendar.bind(on_press=self.Agendamento)
-
-        layout.add_widget(label)
-        layout.add_widget(botao_agendar)
-        self.add_widget(layout)
-
-    def Agendamento(self, instance):
-        self.manager.current = "formulario"
-
-class Formulario(MDScreen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.dialog = None
-        layout = BoxLayout(orientation='vertical')
-
-        #Adicione widgets para nome, data, hora, etc
-        self.nome_input = MDTextField(hint_text="Nome do Paciente")
-        self.datetime_label = MDLabel(text="Escolha a Data e Horario da Consulta", halign="center")
-        self.selected_date = None
-        self.selected_time = None
-
-        #self.datetime_input = ""
-
-        self.botao_datetime = MDRaisedButton(text="Escolher Data e Horario:", pos_hint={"center_x": 0.5})
-        self.botao_datetime.bind(on_press=self.mostrar_datetime_picker)
-
-        botao_confirmar = MDRaisedButton(text="Confirmar Agendamento", pos_hint={"center_x": 0.5})
-        botao_confirmar.bind(on_press=self.confirmar_agendamento)
-
-        layout.add_widget(self.nome_input)
-        layout.add_widget(self.datetime_label)
-        layout.add_widget(self.botao_datetime)
-
-        layout.add_widget(botao_confirmar)
-        self.add_widget(layout)
-
-    def mostrar_datetime_picker(self, instance):
-        date_dialog = MDDatePicker()
-        date_dialog.bind(on_save=self.on_save_date)
-        date_dialog.open()
-
-    def on_save_date(self, instance, value, date_range):
-        self.selected_date = value
-        self.mostrar_time_picker(instance)
-
-    def mostrar_time_picker(self, instance):
-        if self.selected_date is None:
-            return
-        time_dialog = MDTimePicker()
-        time_dialog.time_format = True
-        time_dialog.bind(on_save=self.on_save_time)
-        time_dialog.open()
-
-    def on_save_time(self, instance, value):
-        self.selected_time = value
-        #Aqui assumimos que ambos são chamados em sequencia
-        if self.selected_date and self.selected_time:
-            combinacao_datetime = datetime.combine(self.selected_date, self.selected_time)
-            data_formatada = combinacao_datetime.strftime("%A, %d de %b. %Hh") #Formatação
-            self.datetime_label.text = f'Consulta será marcada para: {data_formatada}'
-            self.botao_datetime.text = "Alterar Data e Horario"
-            
-
-    def confirmar_agendamento(self, instance):
-        nome = self.nome_input.text
-        if not nome:
-            self.mostrar_dialog("Erro", "Por favor, insira o nome do paciente.")
-            return
-
-        if not self.selected_date or not self.selected_time:
-            self.mostrar_dialog("Erro", "Por favor, escolha uma data e hora para a consulta.")
-            return
-        
-        combinacao_datetime = datetime.combine(self.selected_date, self.selected_time)
-        data_hora_am_pm = combinacao_datetime.strftime("%Y-%m-%d %I:%M:%S %p")
-    
-        dados = {'nome': nome, 'data_hora': data_hora_am_pm}
-
-        try:
-            resposta = requests.post('http://127.0.0.1:5000/api/agendar', json=dados)
-            resposta.raise_for_status()
-            mensagem = resposta.json().get('mensagem', 'Agendamento realizado com sucesso!')
-            self.mostrar_dialog("Sucesso", mensagem, auto_dismiss=True)
-            self.manager.current = "tela_inicial"
-        except Exception as e:
-            self.mostrar_dialog("Erro", f"Ocorreu um erro ao salvar os dados: {str(e)}")
-            print(f"Erro ao salvar os dados: {str(e)}")
-
-        self.manager.current = "tela_inicial"
-
-    def salvar_dados(self, nome, data_hora):
-        try:
-            with open('agendamentos.json', 'r') as arquivo:
-                dados = json.load(arquivo)
-        except FileNotFoundError:
-            dados = []
-
-        dados.append({
-            'nome': nome,
-            'data': data_hora
-        })
-
-        with open('agendamentos.json', 'w') as arquivo:
-            json.dump(dados, arquivo, indent=4)
-
-    def mostrar_dialog(self, titulo, mensagem, auto_dismiss=False):
-        if not self.dialog:
-            self.dialog = MDDialog(
-                title=titulo,
-                text=mensagem,
-            )
-        self.dialog.open()
-        if auto_dismiss:
-            Clock.schedule_once(lambda dt: self.fechar_dialog(), 3.5)
-
-    def fechar_dialog(self):
-        self.dialog.dismiss()
-        self.dialog = None
-
-class AgendaApp(MDApp):
+class MyApp(MDApp):
     def build(self):
         sm = ScreenManager()
-        sm.add_widget(TelaInicial(name='tela_inicial'))
-        sm.add_widget(Formulario(name='formulario'))
+        sm.add_widget(HelpDeskApp(name='helpdesk'))
+        sm.add_widget(AbrirChamado(name='chamado'))
+    
         return sm
     
-    '''def fazer_requisicao(self, instance):
-        try:
-            resposta = requests.get('http://127.0.0.1:5000/api/index')
-            resposta.raise_for_status()
-            dados = resposta.json()
-            self.label.text = dados['mensagem']
-        except requests.exceptions.RequestException as e:
-            self.label.text = f'Erro: {e}'
-'''
+class HelpDeskApp(MDScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        layout = MDBoxLayout(orientation='vertical', spacing='12dp', padding='24dp')
+        titulo = MDLabel(text='HelpDask', font_style='H5', halign='center')
+        botao = MDRaisedButton(text='Abrir Chamado', on_press=self.abrir_chamado)
+
+        layout.add_widget(titulo)
+        layout.add_widget(botao)
+
+        self.add_widget(layout)
+
+    def abrir_chamado(self, instance):
+        self.manager.current = "chamado"
+
+class AbrirChamado(MDScreen):
+    usuario = 'Rafael'
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        layout = MDBoxLayout(orientation='vertical', spacing='12dp', padding='24dp')
+        id_usuario = MDLabel(text=f'{self.usuario}', font_style='H5', halign='left')
+        motivo = MDLabel(text='Escolha o motivo para o abrir o chamado')
+
+        #Definir botão de motivo como um atributo da classe
+        self.button_chamado = MDRaisedButton( text='Motivo', on_press=self.abrir_meu_motivo)
+        self.descricao_chamado = MDTextField(hint_text='Descreva o problema')
+        button_confirmacao = MDRaisedButton(text='Confirmar Chamado', on_press=self.confirmar_chamado)
+
+        layout.add_widget(id_usuario)
+        layout.add_widget(motivo)
+        layout.add_widget(self.button_chamado)
+        layout.add_widget(self.descricao_chamado)
+        layout.add_widget(button_confirmacao)
+
+        self.add_widget(layout)
+
+        self.menu_items = [
+            {
+                "viewclass": "OneLineListItem",
+                "text": "Problema com a conexão",
+                "on_release": lambda x="Problema com a conexão": self.selecionar_motivo(x),
+            },
+            {
+                "viewclass": "OneLineListItem",
+                "text": "Problema com o site",
+                "on_release": lambda x="Problema com o site": self.selecionar_motivo(x),
+            },
+            {
+                "viewclass": "OneLineListItem",
+                "text": "Problema com o aplicativo",
+                "on_release": lambda x="Problema com o aplicativo": self.selecionar_motivo(x),
+            }
+        ]
+
+        self.menu_motivo = MDDropdownMenu(
+            caller= self.button_chamado,
+            items=self.menu_items,
+            width_mult=4,
+        )
+
+    def abrir_meu_motivo(self, instance):
+        self.menu_motivo.caller = instance
+        self.menu_motivo.open()
+
+    def selecionar_motivo(self, motivo):
+        print(f"motivo selecionado: {motivo}")
+        self.button_chamado.text = motivo
+        self.menu_motivo.dismiss()
+
+    def confirmar_chamado(self, instance):
+        self.manager.current = "helpdesk"
+
+    
+
+
 if __name__ == '__main__':
-    AgendaApp().run()
+    MyApp().run()
+
+
