@@ -1,4 +1,4 @@
-from kivymd.tools.hotreload.app import MDApp
+from kivymd.app import MDApp
 
 import json
 import requests
@@ -8,27 +8,49 @@ from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.floatlayout import MDFloatLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.textfield import MDTextField
-from kivymd.uix.button import MDRaisedButton, MDIconButton
+from kivymd.uix.button import MDRaisedButton, MDIconButton, MDFloatingActionButton
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.snackbar import MDSnackbar
 from kivy.utils import get_color_from_hex
-from kivy.uix.screenmanager import ScreenManager
+from kivy.uix.screenmanager import ScreenManager, Screen
 from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.list import OneLineListItem, MDList
 from kivymd.uix.scrollview import MDScrollView
-from kivymd.uix.responsivelayout import MDResponsiveLayout
+from kivy.uix.widget import Widget
 from kivy.metrics import dp
 from kivymd.uix.datatables import MDDataTable
 from kivymd.uix.toolbar import MDTopAppBar
 from kivy.graphics import Color, Rectangle, RoundedRectangle
+from kivy.uix.scrollview import ScrollView
+from kivymd.uix.card import MDCard
 
 import os
 import time
+
+KV = """
+Screen:
+    BoxLayout:
+    orientation:'vertical'
+    MDLabel:
+        id: empty_label
+        text: 'Não há nenhum chamado criado'
+        halign: 'center'
+        theme_text_color: 'Secondary'
+    ScrollView:
+        MDList:
+            id: chamados_container
+        MDFloatingActionButton:
+            icon: 'plus'
+            pos_hint: {'center_x': 0.9, 'center_y':0.1}
+            on_release: app.novo_chamado()
+"""
 
 
 class GerenciadorChamados:
     def __init__(self):
         self.chamados = []
+
+   
 
     def adicionar_chamado(self, usuario, motivo, descricao):
         chamado = {
@@ -52,23 +74,25 @@ class MyApp(MDApp):
         sm = ScreenManager()
         self.gerenciador = GerenciadorChamados()
 
-        sm.add_widget(HelpDeskApp(name='helpdesk'))
+        sm.add_widget(HelpDeskApp(self.gerenciador, name='helpdesk'))
         sm.add_widget(AbrirChamado(self.gerenciador, name='chamado'))
-        sm.add_widget(ListaChamados(self.gerenciador, name='lista_chamados'))
+        #sm.add_widget(ListaChamados(self.gerenciador, name='lista_chamados'))
+        #sm.add_widget(DetalhesChamado(name='detalhes_chamado'))
 
         return sm
     
 class HelpDeskApp(MDScreen):
-    def __init__(self, **kwargs):
+    def __init__(self, gerenciador, **kwargs):
         super().__init__(**kwargs)
-
+        self.gerenciador = gerenciador
+        
         with self.canvas.before:
             Color(0,0,0,1) # preto
             self.rect = Rectangle(size=self.size, pos=self.pos)
             self.bind(size=self._update_rect, pos=self._update_rect)
 
         
-        layout = MDFloatLayout()
+        layout = MDBoxLayout(orientation='vertical')
         toolbar = MDTopAppBar(
             title="HelpDesk",
             elevation=4,
@@ -79,34 +103,108 @@ class HelpDeskApp(MDScreen):
             left_action_items=[["menu", lambda x: self.abrir_menu()]],
             right_action_items=[["account", lambda x: self.abrir_perfil()]]
         )
-
-
-        botao_abrir_chamado = MDRaisedButton(
-            text='Abrir Chamado',
-            md_bg_color=get_color_from_hex("#1DB954"), 
-            size_hint=(None, None),
-            size = (dp(200), dp(50)),
-            pos_hint = {'center_x': 0.5, 'center_y': 0.6},
-            on_press=self.abrir_chamado)
-        botao_meus_chamados = MDRaisedButton(
-            text='Meus Chamados', 
-            md_bg_color=get_color_from_hex("#1DB954"),
-            size_hint=(None, None),
-            size = (dp(200), dp(50)),
-            pos_hint = {'center_x': 0.5, 'center_y': 0.4}, 
-            on_press=self.ver_chamados)
-
         layout.add_widget(toolbar)
-        layout.add_widget(botao_abrir_chamado)
-        layout.add_widget(botao_meus_chamados)
+
+        self.scroll = ScrollView()
+        self.chamados_container = MDBoxLayout(orientation='vertical', spacing=10, padding=10, size_hint_y=None)
+        self.chamados_container.bind(minimum_height=self.chamados_container.setter('height'))
+        self.scroll.add_widget(self.chamados_container)
+        layout.add_widget(self.scroll)
 
         self.add_widget(layout)
+        self.add_widget(
+            MDFloatingActionButton(
+                icon="plus",
+                md_bg_color=get_color_from_hex("#1DB954"),
+                pos_hint={"center_x": 0.9, "center_y": 0.1},
+                elevation= 6,
+                on_release=self.abrir_chamado
+            )
+        )
+
+        self.atualizar_lista_chamado()
+
+    def atualizar_lista_chamado(self):
+        self.chamados_container.clear_widgets()
+        chamados= self.gerenciador.listar_chamados()
+
+        self.chamados_container.add_widget(
+            MDLabel(
+                text="Meus Chamados",
+                halign="left",
+                theme_text_color="Primary",
+                font_style="H6",
+                size_hint_y= None,
+                height=dp(40)
+            )
+        )
+
+        self.chamados_container.add_widget(Widget(size_hint_y=None, height=dp(50)))
+                
+        chamados = self.gerenciador.listar_chamados()
+
+        if not chamados:
+            mensagem = MDLabel(
+                    text="Não há nenhum chamado criado",
+                    halign ="center",
+                    valign = "center",
+                    theme_text_color = "Secondary",
+                    size_hint=(1,1)
+                )
+            self.chamados_container.add_widget(
+                MDBoxLayout(mensagem, size_hint=(1,None), height=dp(400), pos_hint={"center_y": 0.5})
+            )
+        else:
+            for chamado in chamados:
+                card = MDCard(
+                    size_hint=(1, None), height=dp(80),
+                    padding=10,
+                    md_bg_color=get_color_from_hex("#1E1E1E")
+                )
+                box = MDBoxLayout(orientation='horizontal', size_hint_y=None, height=dp(70))
+
+                text_box = MDBoxLayout(orientation='vertical')
+                text_box.add_widget(MDLabel(text=f"Motivo: {chamado['motivo']}", theme_text_color="Primary"))
+                text_box.add_widget(MDLabel(text=f"Descrição: {chamado['descricao']}", theme_text_color="Secondary"))
+
+                menu_button = MDIconButton(
+                    icon="dots-vertical",
+                    size_hint=(None, None),
+                    size=(dp(25), dp(25)),
+                    icon_size=dp(15),
+                    theme_text_color="Custom",
+                    text_color=get_color_from_hex("#000000"),
+                    md_bg_color=get_color_from_hex("#1DB954"),
+                )
+                menu_button.bind(on_release=lambda x, chamado=chamado: self.abrir_menu_acoes(chamado))
+
+                box.add_widget(text_box)
+                box.add_widget(menu_button)
+                card.add_widget(box)
+                self.chamados_container.add_widget(card)
 
     def abrir_chamado(self, instance):
         self.manager.current = "chamado"
 
-    def ver_chamados(self, instance):
-        self.manager.current = "lista_chamados"
+    def abrir_menu_acoes(self, chamado):
+        menu_items= [
+            {"viewclass": "OneLineListItem", "text": "Editar chamado", "on_release": lambda: self.editar_chamado(chamado)},
+            {"viewclass": "OneLineListItem", "text": "Excluir", "on_release": lambda: self.excluir_chamado(chamado)}
+        ]
+        self.menu = MDDropdownMenu(
+            caller=self,
+            items=menu_items, 
+            width_mult=4)
+        self.menu.open()
+
+    def editar_chamado(self, chamado):
+        print(f"Editando chamad {chamado['id']}")
+        self.menu.dismiss()
+
+    def excluir_chamado(self, chamado):
+        self.gerenciador.chamados.remove(chamado)
+        self.atualizar_lista_chamado()
+        self.menu.dismiss()
 
     def _update_rect(self, instance, value):
             self.rect.pos = self.pos
@@ -206,6 +304,9 @@ class AbrirChamado(MDScreen):
         self.gerenciador_chamados.adicionar_chamado(self.usuario, motivo, descricao)
 
         self.exibir_snackbar()
+        
+        tela_principal = self.manager.get_screen("helpdesk")
+        tela_principal.atualizar_lista_chamado()
 
         self.manager.current = "helpdesk"
 
@@ -227,65 +328,6 @@ class AbrirChamado(MDScreen):
         
         
         self.snackbar.open()
-
-class ListaChamados(MDScreen):
-    def __init__(self, gerenciador_chamados, **kwargs):
-        super().__init__(**kwargs)
-        self.gerenciador_chamados = gerenciador_chamados
-
-        layout_principal = MDBoxLayout(orientation='vertical', spacing='12dp', padding='24dp', md_bg_color=get_color_from_hex("#332525"))
-        titulo = MDLabel(text="Meus Chamados", font_style="H5", halign="center", theme_text_color="Secondary", font_size='18sp', size_hint_y=None, height=dp(40))
-
-        self.data_table = MDDataTable(
-            size_hint= (1, 0.7),
-            use_pagination=True,
-            check=True,
-            column_data=[
-                ("ID", dp(20)),
-                ("Motivo", dp(30)),
-                ("Descrição", dp(30)),
-                ("Status", dp(20)),
-                ("Ações", dp(20)) #Coluna para os botões
-            ],
-            row_data=self.carregar_chamados(),
-            rows_num=5,
-            elevation=2
-        )
-        '''self.scroll_view = MDScrollView()
-        self.lista = MDList()
-        self.scroll_view.add_widget(self.lista)
-'''
-        botao_voltar = MDRaisedButton(text="Voltar", md_bg_color=get_color_from_hex("#D32F2F"), on_press=self.voltar, size_hint_x=1)
-
-        layout_principal.add_widget(titulo)
-        layout_principal.add_widget(self.data_table)
-        layout_principal.add_widget(botao_voltar)
-
-        self.add_widget(layout_principal)
-
-    def carregar_chamados(self):
-        chamados = self.gerenciador_chamados.listar_chamados()
-        data = []
-        for chamado in chamados:
-            '''editar = MDRaisedButton(text='Editar', on_press=lambda x, chamado=chamado: self.editar_chamado(chamado))
-            excluir = MDRaisedButton(text='Excluir', on_press=lambda x, chamado=chamado: self.excluir_chamado(chamado))'''
-            data.append([chamado['id'], chamado['motivo'], chamado['descricao'], chamado['status'], "Editar | Excluir"])
-        return data
-        
-    def voltar(self, instance):
-        self.manager.current = "helpdesk"
-
-    def on_pre_enter(self):
-        self.data_table.row_data = self.carregar_chamados()
-
-    def on_row_press(self, instance_table, instance_row):
-        print(f"Linha {instance_row.index} pressionada")
-
-    def editar_chamado(self, chamado):
-        print(f"Editar chamado {chamado['id']}")
-
-    def excluir_chamado(self, chamado):
-        print(f"Excluir chamado {chamado['id']}")
 
 if __name__ == '__main__':
     MyApp().run()
